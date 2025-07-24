@@ -1,14 +1,11 @@
 import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
-import { ThemeProvider } from '@/components/theme-provider'
-import { AuthProvider } from '@/lib/auth-context'
-import ClientWrapper from '@/components/client-wrapper'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Bloom Garden Cafe - Order Online',
-  description: 'Order delicious food and drinks from Bloom Garden Cafe. Dine-in with QR code ordering or delivery to your home.',
+  title: 'v0 App',
+  description: 'Created with v0',
   generator: 'v0.dev',
 }
 
@@ -20,7 +17,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <style>{`
 html {
   font-family: ${GeistSans.style.fontFamily};
@@ -29,15 +25,7 @@ html {
 }
         `}</style>
       </head>
-      <body suppressHydrationWarning={true}>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          <AuthProvider>
-            <ClientWrapper>
-              {children}
-            </ClientWrapper>
-          </AuthProvider>
-        </ThemeProvider>
-      </body>
+      <body>{children}</body>
     </html>
   )
 }

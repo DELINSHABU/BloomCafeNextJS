@@ -6,39 +6,29 @@ export interface MenuItem {
   rate: string
 }
 
-export interface MenuItemWithAvailability extends MenuItem {
-  available: boolean
-  originalRate: string
-}
-
 export interface MenuCategory {
   category: string
   products: MenuItem[]
 }
 
-export interface MenuCategoryWithAvailability extends Omit<MenuCategory, 'products'> {
-  category: string
-  products: MenuItemWithAvailability[]
-}
-
-// In-memory storage for menu availability (in a real app, this would be in a database)
-let menuAvailability: { [itemNo: string]: { available: boolean; currentRate: string } } = {}
-
 export const getMenuData = (): MenuCategory[] => {
-  return menuData.menu
+  return menuData.categories || menuData.menu || []
 }
 
 export const getMenuCategories = (): string[] => {
-  return menuData.menu.map(category => category.category)
+  const data = getMenuData()
+  return data.map(category => category.category)
 }
 
 export const getItemsByCategory = (categoryName: string): MenuItem[] => {
-  const category = menuData.menu.find(cat => cat.category === categoryName)
+  const data = getMenuData()
+  const category = data.find(cat => cat.category === categoryName)
   return category ? category.products : []
 }
 
 export const getAllItems = (): MenuItem[] => {
-  return menuData.menu.flatMap(category => category.products)
+  const data = getMenuData()
+  return data.flatMap(category => category.products)
 }
 
 export const getPopularItems = (): MenuItem[] => {
@@ -96,79 +86,14 @@ export const getCategoryIcon = (category: string): string => {
   return iconMap[category] || '🍴'
 }
 
-// Menu availability management functions
-export const getMenuDataWithAvailability = (): MenuCategoryWithAvailability[] => {
-  return menuData.menu.map(category => ({
+// Simple function for getting menu data with availability (defaults to available)
+export const getMenuDataWithAvailability = () => {
+  const data = getMenuData()
+  return data.map(category => ({
     ...category,
     products: category.products.map(item => ({
       ...item,
-      available: menuAvailability[item.itemNo]?.available ?? true,
-      originalRate: item.rate,
-      rate: menuAvailability[item.itemNo]?.currentRate ?? item.rate
+      available: true // Default all items to available
     }))
   }))
-}
-
-export const getAvailableItems = (): MenuItemWithAvailability[] => {
-  return getMenuDataWithAvailability()
-    .flatMap(category => category.products)
-    .filter(item => item.available)
-}
-
-export const getPopularAvailableItems = (): MenuItemWithAvailability[] => {
-  const popularCategories = ['AL FAHAM', 'BIRIYANI', 'MOJITTO', 'SHAKES']
-  const popularItems: MenuItemWithAvailability[] = []
-  
-  const menuWithAvailability = getMenuDataWithAvailability()
-  
-  popularCategories.forEach(categoryName => {
-    const category = menuWithAvailability.find(cat => cat.category === categoryName)
-    if (category) {
-      const availableItems = category.products.filter(item => item.available)
-      popularItems.push(...availableItems.slice(0, 2))
-    }
-  })
-  
-  return popularItems
-}
-
-export const updateItemAvailability = (itemNo: string, available: boolean) => {
-  if (!menuAvailability[itemNo]) {
-    const originalItem = getAllItems().find(item => item.itemNo === itemNo)
-    menuAvailability[itemNo] = {
-      available,
-      currentRate: originalItem?.rate || '0'
-    }
-  } else {
-    menuAvailability[itemNo].available = available
-  }
-}
-
-export const updateItemPrice = (itemNo: string, newRate: string) => {
-  if (!menuAvailability[itemNo]) {
-    menuAvailability[itemNo] = {
-      available: true,
-      currentRate: newRate
-    }
-  } else {
-    menuAvailability[itemNo].currentRate = newRate
-  }
-}
-
-export const isItemAvailable = (itemNo: string): boolean => {
-  return menuAvailability[itemNo]?.available ?? true
-}
-
-export const getCurrentPrice = (itemNo: string): string => {
-  const originalItem = getAllItems().find(item => item.itemNo === itemNo)
-  return menuAvailability[itemNo]?.currentRate ?? originalItem?.rate ?? '0'
-}
-
-export const addNewMenuItem = (categoryName: string, item: MenuItem) => {
-  // In a real app, this would update the database
-  // For now, we'll just add it to the availability system
-  menuAvailability[item.itemNo] = {
-    available: true,
-    currentRate: item.rate
-  }
 }

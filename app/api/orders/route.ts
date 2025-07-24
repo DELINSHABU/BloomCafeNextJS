@@ -1,103 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { promises as fs } from 'fs'
+import fs from 'fs'
 import path from 'path'
 
-const ORDERS_FILE = path.join(process.cwd(), 'orders.json')
+const ORDERS_FILE_PATH = path.join(process.cwd(), 'orders.json')
 
-// Ensure orders file exists
-async function ensureOrdersFile() {
-  try {
-    await fs.access(ORDERS_FILE)
-  } catch {
-    await fs.writeFile(ORDERS_FILE, JSON.stringify({ orders: [] }))
+// Initialize orders file if it doesn't exist
+function initializeOrdersFile() {
+  if (!fs.existsSync(ORDERS_FILE_PATH)) {
+    fs.writeFileSync(ORDERS_FILE_PATH, JSON.stringify({ orders: [] }, null, 2))
   }
 }
 
-// GET - Fetch all orders
 export async function GET() {
   try {
-    await ensureOrdersFile()
-    const data = await fs.readFile(ORDERS_FILE, 'utf8')
-    const { orders } = JSON.parse(data)
-    
-    return NextResponse.json({ 
-      success: true, 
-      orders: orders || [],
-      timestamp: new Date().toISOString()
-    })
+    initializeOrdersFile()
+    const fileContents = fs.readFileSync(ORDERS_FILE_PATH, 'utf8')
+    const ordersData = JSON.parse(fileContents)
+    return NextResponse.json(ordersData)
   } catch (error) {
-    console.error('Error fetching orders:', error)
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to fetch orders',
-      orders: []
-    }, { status: 500 })
+    console.error('Error reading orders file:', error)
+    return NextResponse.json({ error: 'Failed to read orders data' }, { status: 500 })
   }
 }
 
-// POST - Add new order or update existing order
 export async function POST(request: NextRequest) {
   try {
-    await ensureOrdersFile()
-    const body = await request.json()
-    const { action, order, orderId, status } = body
-
-    const data = await fs.readFile(ORDERS_FILE, 'utf8')
-    const ordersData = JSON.parse(data)
-    let orders = ordersData.orders || []
-
-    if (action === 'add') {
-      // Add new order
-      orders.push({
-        ...order,
-        timestamp: new Date(order.timestamp).toISOString()
-      })
-      console.log('New order added:', order.id)
-    } else if (action === 'update' && orderId && status) {
-      // Update order status
-      orders = orders.map((o: any) => 
-        o.id === orderId ? { ...o, status } : o
-      )
-      console.log(`Order ${orderId} status updated to: ${status}`)
-    }
-
-    // Save updated orders
-    await fs.writeFile(ORDERS_FILE, JSON.stringify({ 
-      orders,
-      lastUpdated: new Date().toISOString()
-    }))
-
-    return NextResponse.json({ 
-      success: true, 
-      orders,
-      message: action === 'add' ? 'Order added successfully' : 'Order updated successfully'
-    })
+    initializeOrdersFile()
+    const newOrder = await request.json()
+    
+    // Read existing orders
+    const fileContents = fs.readFileSync(ORDERS_FILE_PATH, 'utf8')
+    const ordersData = JSON.parse(fileContents)
+    
+    // Add new order
+    ordersData.orders.push(newOrder)
+    
+    // Write back to file
+    fs.writeFileSync(ORDERS_FILE_PATH, JSON.stringify(ordersData, null, 2))
+    
+    return NextResponse.json({ success: true, message: 'Order added successfully' })
   } catch (error) {
-    console.error('Error processing order:', error)
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to process order' 
-    }, { status: 500 })
+    console.error('Error adding order:', error)
+    return NextResponse.json({ error: 'Failed to add order' }, { status: 500 })
   }
 }
 
-// DELETE - Clear all orders (for testing)
-export async function DELETE() {
+export async function PUT(request: NextRequest) {
   try {
-    await fs.writeFile(ORDERS_FILE, JSON.stringify({ 
-      orders: [],
-      lastUpdated: new Date().toISOString()
-    }))
+    initializeOrdersFile()
+    const { orderId, status } = await request.json()
     
-    return NextResponse.json({ 
-      success: true, 
-      message: 'All orders cleared' 
-    })
+    // Read existing orders
+    const fileContents = fs.readFileSync(ORDERS_FILE_PATH, 'utf8')
+    const ordersData = JSON.parse(fileContents)
+    
+    // Update order status
+    const orderIndex = ordersData.orders.findIndex((order: any) => order.id === orderId)
+    if (orderIndex !== -1) {
+      ordersData.orders[orderIndex].status = status
+      
+      // Write back to file
+      fs.writeFileSync(ORDERS_FILE_PATH, JSON.stringify(ordersData, null, 2))
+      
+      return NextResponse.json({ success: true, message: 'Order status updated successfully' })
+    } else {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
   } catch (error) {
-    console.error('Error clearing orders:', error)
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to clear orders' 
-    }, { status: 500 })
+    console.error('Error updating order status:', error)
+    return NextResponse.json({ error: 'Failed to update order status' }, { status: 500 })
   }
 }
