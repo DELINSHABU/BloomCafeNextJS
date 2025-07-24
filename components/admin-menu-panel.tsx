@@ -47,17 +47,75 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
 
   // Initialize menu data with availability status
   useEffect(() => {
-    const originalData = getMenuData()
-    const dataWithAvailability: CategoryWithAvailability[] = originalData.map(category => ({
-      ...category,
-      products: category.products.map(item => ({
-        ...item,
-        available: true, // Default to available
-        originalRate: item.rate
-      }))
-    }))
-    setMenuData(dataWithAvailability)
+    loadMenuData()
   }, [])
+
+  const loadMenuData = async () => {
+    try {
+      const response = await fetch('/api/menu')
+      if (response.ok) {
+        const data = await response.json()
+        const dataWithAvailability: CategoryWithAvailability[] = data.categories.map((category: any) => ({
+          ...category,
+          products: category.products.map((item: any) => ({
+            ...item,
+            available: item.available !== undefined ? item.available : true,
+            originalRate: item.originalRate || item.rate
+          }))
+        }))
+        setMenuData(dataWithAvailability)
+      } else {
+        // Fallback to static data if API fails
+        const originalData = getMenuData()
+        const dataWithAvailability: CategoryWithAvailability[] = originalData.map(category => ({
+          ...category,
+          products: category.products.map(item => ({
+            ...item,
+            available: true,
+            originalRate: item.rate
+          }))
+        }))
+        setMenuData(dataWithAvailability)
+      }
+    } catch (error) {
+      console.error('Error loading menu data:', error)
+      // Fallback to static data
+      const originalData = getMenuData()
+      const dataWithAvailability: CategoryWithAvailability[] = originalData.map(category => ({
+        ...category,
+        products: category.products.map(item => ({
+          ...item,
+          available: true,
+          originalRate: item.rate
+        }))
+      }))
+      setMenuData(dataWithAvailability)
+    }
+  }
+
+  const saveMenuData = async (updatedData: CategoryWithAvailability[]) => {
+    try {
+      const menuToSave = {
+        categories: updatedData
+      }
+      
+      const response = await fetch('/api/menu', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(menuToSave),
+      })
+
+      if (response.ok) {
+        console.log('Menu data saved successfully')
+      } else {
+        console.error('Failed to save menu data')
+      }
+    } catch (error) {
+      console.error('Error saving menu data:', error)
+    }
+  }
 
   const getFilteredItems = () => {
     let items: MenuItemWithAvailability[] = []
@@ -80,7 +138,7 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
   }
 
   const toggleItemAvailability = (itemNo: string, categoryName: string) => {
-    setMenuData(prev => prev.map(category => 
+    const updatedData = menuData.map(category => 
       category.category === categoryName 
         ? {
             ...category,
@@ -91,11 +149,13 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
             )
           }
         : category
-    ))
+    )
+    setMenuData(updatedData)
+    saveMenuData(updatedData)
   }
 
   const updateItemPrice = (itemNo: string, categoryName: string, newRate: string) => {
-    setMenuData(prev => prev.map(category => 
+    const updatedData = menuData.map(category => 
       category.category === categoryName 
         ? {
             ...category,
@@ -106,7 +166,9 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
             )
           }
         : category
-    ))
+    )
+    setMenuData(updatedData)
+    saveMenuData(updatedData)
   }
 
   const addNewItem = () => {
@@ -124,14 +186,17 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
       originalRate: newItem.rate!
     }
 
-    setMenuData(prev => prev.map(category => 
+    const updatedData = menuData.map(category => 
       category.category === selectedCategoryForNew
         ? {
             ...category,
             products: [...category.products, itemToAdd]
           }
         : category
-    ))
+    )
+    
+    setMenuData(updatedData)
+    saveMenuData(updatedData)
 
     // Reset form
     setNewItem({ name: "", rate: "", available: true })

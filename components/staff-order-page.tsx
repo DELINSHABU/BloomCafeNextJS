@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { ShoppingCart, ArrowLeft, Plus, Minus, User, MapPin, LogOut } from "lucide-react"
 import { getMenuDataWithAvailability, formatPrice, getCategoryIcon } from "@/lib/menu-data"
 import { useOrders } from "@/lib/order-context"
+import { useEffect } from "react"
 import type { Page, CartItem, Order } from "@/app/page"
 
 interface StaffOrderPageProps {
@@ -40,7 +41,15 @@ export default function StaffOrderPage({ onNavigate, currentUser, onLogout }: St
   const [searchTerm, setSearchTerm] = useState<string>("")
 
   const { addOrder } = useOrders()
-  const menuData = getMenuDataWithAvailability()
+  const [menuData, setMenuData] = useState<any[]>([])
+
+  useEffect(() => {
+    const loadMenuData = async () => {
+      const data = await getMenuDataWithAvailability()
+      setMenuData(data)
+    }
+    loadMenuData()
+  }, [])
 
   const addToCart = (itemNo: string, name: string, rate: string) => {
     const price = formatPrice(rate)
