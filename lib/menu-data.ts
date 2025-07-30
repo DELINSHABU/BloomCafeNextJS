@@ -86,14 +86,152 @@ export const getCategoryIcon = (category: string): string => {
   return iconMap[category] || '🍴'
 }
 
-// Simple function for getting menu data with availability (defaults to available)
-export const getMenuDataWithAvailability = () => {
+// Function to get menu data with availability from separate JSON file
+export const getMenuDataWithAvailability = async () => {
+  try {
+    // Fetch availability data from API
+    const availabilityResponse = await fetch('/api/menu-availability')
+    let availabilityData = { items: {} }
+    
+    if (availabilityResponse.ok) {
+      availabilityData = await availabilityResponse.json()
+    }
+    
+    // Get base menu data
+    const data = getMenuData()
+    
+    // Merge with availability data
+    return data.map(category => ({
+      ...category,
+      products: category.products.map(item => {
+        const availability = availabilityData.items[item.itemNo] || {}
+        return {
+          ...item,
+          available: availability.available !== undefined ? availability.available : true,
+          currentPrice: availability.price || item.rate,
+          originalPrice: item.rate
+        }
+      })
+    }))
+  } catch (error) {
+    console.error('Error fetching availability data:', error)
+    // Fallback to default availability
+    const data = getMenuData()
+    return data.map(category => ({
+      ...category,
+      products: category.products.map(item => ({
+        ...item,
+        available: true,
+        currentPrice: item.rate,
+        originalPrice: item.rate
+      }))
+    }))
+  }
+}
+
+// Synchronous version for components that can't use async
+export const getMenuDataWithAvailabilitySync = () => {
   const data = getMenuData()
   return data.map(category => ({
     ...category,
     products: category.products.map(item => ({
       ...item,
-      available: true // Default all items to available
+      available: true,
+      currentPrice: item.rate,
+      originalPrice: item.rate
     }))
   }))
+}
+
+// Function to update item availability
+export const updateItemAvailability = async (itemNo: string, available: boolean) => {
+  try {
+    const response = await fetch('/api/menu-availability', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ itemNo, available }),
+    })
+    
+    if (!response.ok) {
+      throw new Error('Failed to update availability')
+    }
+    
+    return await response.json()
+  } catch (error) {
+    console.error('Error updating availability:', error)
+    throw error
+  }
+}
+
+// Function to update item price
+export const updateItemPrice = async (itemNo: string, price: string) => {
+  try {
+    const response = await fetch('/api/menu-availability', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ itemNo, price }),
+    })
+    
+    if (!response.ok) {
+      throw new Error('Failed to update price')
+    }
+    
+    return await response.json()
+  } catch (error) {
+    console.error('Error updating price:', error)
+    throw error
+  }
+}
+
+// Function to get popular items with availability
+export const getPopularAvailableItems = async () => {
+  try {
+    const menuWithAvailability = await getMenuDataWithAvailability()
+    const popularCategories = ['AL FAHAM', 'BIRIYANI', 'MOJITTO', 'SHAKES']
+    const popularItems: any[] = []
+    
+    popularCategories.forEach(categoryName => {
+      const category = menuWithAvailability.find(cat => cat.category === categoryName)
+      if (category) {
+        const availableItems = category.products.filter(item => item.available)
+        popularItems.push(...availableItems.slice(0, 2))
+      }
+    })
+    
+    return popularItems
+  } catch (error) {
+    console.error('Error fetching popular available items:', error)
+    // Fallback to regular popular items
+    return getPopularItems().map(item => ({
+      ...item,
+      available: true,
+      currentPrice: item.rate,
+      originalPrice: item.rate
+    }))
+  }
+}
+
+// Synchronous version for popular items
+export const getPopularAvailableItemsSync = () => {
+  const popularCategories = ['AL FAHAM', 'BIRIYANI', 'MOJITTO', 'SHAKES']
+  const popularItems: any[] = []
+  
+  popularCategories.forEach(categoryName => {
+    const items = getItemsByCategory(categoryName)
+    if (items.length > 0) {
+      const itemsWithAvailability = items.slice(0, 2).map(item => ({
+        ...item,
+        available: true,
+        currentPrice: item.rate,
+        originalPrice: item.rate
+      }))
+      popularItems.push(...itemsWithAvailability)
+    }
+  })
+  
+  return popularItems
 }

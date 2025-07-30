@@ -10,8 +10,9 @@ import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Edit, Plus, Save, X, Search, AlertCircle, LogOut, User } from "lucide-react"
-import { getMenuData, getMenuCategories, getCategoryIcon } from "@/lib/menu-data"
+import { ArrowLeft, Edit, Plus, Save, X, Search, AlertCircle, LogOut, User, Star } from "lucide-react"
+import { getMenuData, getMenuCategories, getCategoryIcon, updateItemAvailability, updateItemPrice } from "@/lib/menu-data"
+import TodaysSpecialManager from "@/components/todays-special-manager"
 import type { Page } from "@/app/page"
 import type { MenuItem, MenuCategory } from "@/lib/menu-data"
 
@@ -52,31 +53,32 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
 
   const loadMenuData = async () => {
     try {
-      const response = await fetch('/api/menu')
-      if (response.ok) {
-        const data = await response.json()
-        const dataWithAvailability: CategoryWithAvailability[] = data.categories.map((category: any) => ({
-          ...category,
-          products: category.products.map((item: any) => ({
-            ...item,
-            available: item.available !== undefined ? item.available : true,
-            originalRate: item.originalRate || item.rate
-          }))
-        }))
-        setMenuData(dataWithAvailability)
-      } else {
-        // Fallback to static data if API fails
-        const originalData = getMenuData()
-        const dataWithAvailability: CategoryWithAvailability[] = originalData.map(category => ({
-          ...category,
-          products: category.products.map(item => ({
-            ...item,
-            available: true,
-            originalRate: item.rate
-          }))
-        }))
-        setMenuData(dataWithAvailability)
+      // Get base menu data
+      const originalData = getMenuData()
+      
+      // Get availability data
+      const availabilityResponse = await fetch('/api/menu-availability')
+      let availabilityData = { items: {} }
+      
+      if (availabilityResponse.ok) {
+        availabilityData = await availabilityResponse.json()
       }
+      
+      // Merge data with availability
+      const dataWithAvailability: CategoryWithAvailability[] = originalData.map(category => ({
+        ...category,
+        products: category.products.map(item => {
+          const availability = availabilityData.items[item.itemNo] || {}
+          return {
+            ...item,
+            available: availability.available !== undefined ? availability.available : true,
+            rate: availability.price || item.rate,
+            originalRate: item.rate
+          }
+        })
+      }))
+      
+      setMenuData(dataWithAvailability)
     } catch (error) {
       console.error('Error loading menu data:', error)
       // Fallback to static data
@@ -90,30 +92,6 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
         }))
       }))
       setMenuData(dataWithAvailability)
-    }
-  }
-
-  const saveMenuData = async (updatedData: CategoryWithAvailability[]) => {
-    try {
-      const menuToSave = {
-        categories: updatedData
-      }
-      
-      const response = await fetch('/api/menu', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(menuToSave),
-      })
-
-      if (response.ok) {
-        console.log('Menu data saved successfully')
-      } else {
-        console.error('Failed to save menu data')
-      }
-    } catch (error) {
-      console.error('Error saving menu data:', error)
     }
   }
 
@@ -137,38 +115,61 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
     return items
   }
 
-  const toggleItemAvailability = (itemNo: string, categoryName: string) => {
-    const updatedData = menuData.map(category => 
-      category.category === categoryName 
-        ? {
-            ...category,
-            products: category.products.map(item =>
-              item.itemNo === itemNo 
-                ? { ...item, available: !item.available }
-                : item
-            )
-          }
-        : category
-    )
-    setMenuData(updatedData)
-    saveMenuData(updatedData)
+  const toggleItemAvailability = async (itemNo: string, categoryName: string) => {
+    try {
+      // Find current availability
+      const currentItem = menuData
+        .find(cat => cat.category === categoryName)
+        ?.products.find(item => item.itemNo === itemNo)
+      
+      if (!currentItem) return
+      
+      const newAvailability = !currentItem.available
+      
+      // Update in availability API
+      await updateItemAvailability(itemNo, newAvailability)
+      
+      // Update local state
+      setMenuData(prev => prev.map(category => 
+        category.category === categoryName 
+          ? {
+              ...category,
+              products: category.products.map(item =>
+                item.itemNo === itemNo 
+                  ? { ...item, available: newAvailability }
+                  : item
+              )
+            }
+          : category
+      ))
+    } catch (error) {
+      console.error('Error updating availability:', error)
+      alert('Failed to update availability. Please try again.')
+    }
   }
 
-  const updateItemPrice = (itemNo: string, categoryName: string, newRate: string) => {
-    const updatedData = menuData.map(category => 
-      category.category === categoryName 
-        ? {
-            ...category,
-            products: category.products.map(item =>
-              item.itemNo === itemNo 
-                ? { ...item, rate: newRate }
-                : item
-            )
-          }
-        : category
-    )
-    setMenuData(updatedData)
-    saveMenuData(updatedData)
+  const handleUpdateItemPrice = async (itemNo: string, categoryName: string, newRate: string) => {
+    try {
+      // Update in availability API
+      await updateItemPrice(itemNo, newRate)
+      
+      // Update local state
+      setMenuData(prev => prev.map(category => 
+        category.category === categoryName 
+          ? {
+              ...category,
+              products: category.products.map(item =>
+                item.itemNo === itemNo 
+                  ? { ...item, rate: newRate }
+                  : item
+              )
+            }
+          : category
+      ))
+    } catch (error) {
+      console.error('Error updating price:', error)
+      alert('Failed to update price. Please try again.')
+    }
   }
 
   const addNewItem = () => {
@@ -186,17 +187,14 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
       originalRate: newItem.rate!
     }
 
-    const updatedData = menuData.map(category => 
+    setMenuData(prev => prev.map(category => 
       category.category === selectedCategoryForNew
         ? {
             ...category,
             products: [...category.products, itemToAdd]
           }
         : category
-    )
-    
-    setMenuData(updatedData)
-    saveMenuData(updatedData)
+    ))
 
     // Reset form
     setNewItem({ name: "", rate: "", available: true })
@@ -212,7 +210,7 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
     )?.category
 
     if (categoryName) {
-      updateItemPrice(editingItem.itemNo, categoryName, editingItem.rate)
+      handleUpdateItemPrice(editingItem.itemNo, categoryName, editingItem.rate)
     }
     setEditingItem(null)
   }
@@ -264,33 +262,41 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
       </div>
 
       <div className="p-4 sm:p-6">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">{stats.available}</div>
-                <div className="text-sm text-gray-600">Available</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-red-600">{stats.unavailable}</div>
-                <div className="text-sm text-gray-600">Unavailable</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
-                <div className="text-sm text-gray-600">Total Items</div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Navigation Tabs */}
+        <Tabs defaultValue="menu" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsTrigger value="menu">Menu Management</TabsTrigger>
+            <TabsTrigger value="specials">Today's Special</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="menu">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{stats.available}</div>
+                    <div className="text-sm text-gray-600">Available</div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-red-600">{stats.unavailable}</div>
+                    <div className="text-sm text-gray-600">Unavailable</div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
+                    <div className="text-sm text-gray-600">Total Items</div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
         {/* Controls */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
@@ -468,12 +474,18 @@ export default function AdminMenuPanel({ onNavigate, currentUser, onLogout }: Ad
           })}
         </div>
 
-        {getFilteredItems().length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            <Search className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p>No items found matching your search criteria</p>
-          </div>
-        )}
+            {getFilteredItems().length === 0 && (
+              <div className="text-center py-12 text-gray-500">
+                <Search className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <p>No items found matching your search criteria</p>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="specials">
+            <TodaysSpecialManager currentUser={currentUser} />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )
