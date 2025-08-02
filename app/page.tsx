@@ -1,340 +1,145 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import HomePage from "@/components/home-page"
-import CartModal from "@/components/cart-modal"
-import OrderListPage from "@/components/order-list-page"
-import MenuPage from "@/components/menu-page"
-import OrderSuccessPage from "@/components/order-success-page"
-import QRGenerator from "@/components/qr-generator"
-import { OrderProvider, useOrders } from "@/lib/order-context"
+import { useState } from "react"
+import { CafeHeader } from "@/components/cafe-header"
+import { CategoryTabs } from "@/components/category-tabs"
+import { MenuItemCard } from "@/components/menu-item-card"
+import { CartDrawer } from "@/components/cart-drawer"
+import { OrderSuccess } from "@/components/order-success"
+import { AdminPanel } from "@/components/admin-panel"
+import { useCart } from "@/hooks/use-cart"
+import { menuItems } from "@/lib/data"
+import type { MenuItem, Order } from "@/types"
+import { Button } from "@/components/ui/button"
 
-export type CartItem = {
-  id: string
-  name: string
-  description: string
-  price: number
-  quantity: number
-}
+export default function CafeApp() {
+  const [activeCategory, setActiveCategory] = useState("all")
+  const [isCartOpen, setIsCartOpen] = useState(false)
+  const [currentView, setCurrentView] = useState<"menu" | "order-success" | "admin">("menu")
+  const [orders, setOrders] = useState<Order[]>([])
+  const [currentOrder, setCurrentOrder] = useState<any>(null)
 
-export type OrderStatus = "pending" | "preparing" | "ready" | "delivered"
+  const { cart, addToCart, removeFromCart, updateQuantity, clearCart, getTotalPrice, getTotalItems } = useCart()
 
-export type Order = {
-  id: string
-  items: CartItem[]
-  total: number
-  status: OrderStatus
-  tableNumber?: string
-  customerName?: string
-  orderType: "dine-in" | "delivery"
-  timestamp: Date
-  staffMember?: string
-}
+  const filteredItems =
+    activeCategory === "all" ? menuItems : menuItems.filter((item) => item.category === activeCategory)
 
-export type Page = "home" | "menu" | "cart" | "order-list" | "order-success" | "qr-generator"
-
-function AppContent() {
-  const [currentPage, setCurrentPage] = useState<Page>("home")
-  const [showCartModal, setShowCartModal] = useState(false)
-  const [cartItems, setCartItems] = useState<CartItem[]>([])
-  const [tableNumber, setTableNumber] = useState<string>("")
-  const [orderType, setOrderType] = useState<"dine-in" | "delivery">("delivery")
-  const [isCartLoaded, setIsCartLoaded] = useState(false)
-  
-  const { orders, addOrder, updateOrderStatus } = useOrders()
-
-  // Cart persistence functions
-  const saveCartToStorage = (items: CartItem[]) => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('bloom_cafe_cart', JSON.stringify({
-          items,
-          tableNumber,
-          orderType,
-          timestamp: new Date().toISOString()
-        }))
-        console.log('Cart saved to localStorage:', items.length, 'items')
-      } catch (error) {
-        console.error('Failed to save cart to localStorage:', error)
-      }
-    }
+  const handleAddToCart = (item: MenuItem) => {
+    addToCart(item)
   }
 
-  const loadCartFromStorage = () => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('bloom_cafe_cart')
-        if (stored) {
-          const cartData = JSON.parse(stored)
-          const savedTime = new Date(cartData.timestamp)
-          const now = new Date()
-          const hoursDiff = (now.getTime() - savedTime.getTime()) / (1000 * 60 * 60)
-          
-          // Only restore cart if it's less than 24 hours old
-          if (hoursDiff < 24) {
-            console.log('Cart loaded from localStorage:', cartData.items.length, 'items')
-            return {
-              items: cartData.items || [],
-              tableNumber: cartData.tableNumber || "",
-              orderType: cartData.orderType || "delivery"
-            }
-          } else {
-            // Clear old cart data
-            localStorage.removeItem('bloom_cafe_cart')
-            console.log('Old cart data cleared (>24 hours)')
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load cart from localStorage:', error)
-      }
-    }
-    return { items: [], tableNumber: "", orderType: "delivery" }
-  }
-
-  const clearCartFromStorage = () => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('bloom_cafe_cart')
-        console.log('Cart cleared from localStorage')
-      } catch (error) {
-        console.error('Failed to clear cart from localStorage:', error)
-      }
-    }
-  }
-
-  // Load cart from localStorage on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedCart = loadCartFromStorage()
-      setCartItems(savedCart.items)
-      
-      // Only set table/order type from storage if not already set by URL
-      if (!tableNumber && savedCart.tableNumber) {
-        setTableNumber(savedCart.tableNumber)
-      }
-      if (orderType === "delivery" && savedCart.orderType) {
-        setOrderType(savedCart.orderType)
-      }
-      
-      setIsCartLoaded(true)
-      console.log('Cart initialization completed')
-    }
-  }, [])
-
-  // Initialize page state from URL on load
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const updateFromURL = () => {
-        const urlParams = new URLSearchParams(window.location.search)
-        const table = urlParams.get('table')
-        const page = urlParams.get('page') as Page
-        
-        console.log('URL Detection - Full URL:', window.location.href)
-        console.log('URL Detection - Table parameter:', table)
-        console.log('URL Detection - Page parameter:', page)
-        
-        // Handle QR code table parameter (takes priority over stored data)
-        if (table) {
-          console.log('Setting table number from URL:', table)
-          setTableNumber(table)
-          setOrderType("dine-in")
-        }
-        
-        // Handle page parameter
-        if (page && isValidPage(page)) {
-          console.log('Setting page from URL:', page)
-          setCurrentPage(page)
-        } else if (!page) {
-          // No page parameter means home page
-          setCurrentPage("home")
-        }
-      }
-
-      // Initial load
-      updateFromURL()
-
-      // Handle browser back/forward buttons
-      const handlePopState = () => {
-        console.log('Browser navigation detected')
-        updateFromURL()
-      }
-
-      window.addEventListener('popstate', handlePopState)
-      
-      return () => {
-        window.removeEventListener('popstate', handlePopState)
-      }
-    }
-  }, [])
-
-  // Save cart to localStorage whenever cart items, table, or order type changes
-  useEffect(() => {
-    if (isCartLoaded) {
-      saveCartToStorage(cartItems)
-    }
-  }, [cartItems, tableNumber, orderType, isCartLoaded])
-
-  // Helper function to validate page parameter
-  const isValidPage = (page: string): page is Page => {
-    const validPages: Page[] = ["home", "menu", "cart", "order-list", "order-success", "qr-generator"]
-    return validPages.includes(page as Page)
-  }
-
-  // Update URL when page changes (without page reload)
-  const navigateToPage = (page: Page) => {
-    setCurrentPage(page)
-    
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search)
-      
-      // Preserve table parameter if it exists
-      if (tableNumber) {
-        urlParams.set('table', tableNumber)
-      }
-      
-      // Set page parameter (except for home page to keep URLs clean)
-      if (page !== 'home') {
-        urlParams.set('page', page)
-      } else {
-        urlParams.delete('page')
-      }
-      
-      const newUrl = `${window.location.pathname}${urlParams.toString() ? '?' + urlParams.toString() : ''}`
-      window.history.pushState({}, '', newUrl)
-      console.log('Navigation - Updated URL to:', newUrl)
-    }
-  }
-
-  const addToCart = (item: Omit<CartItem, "quantity">) => {
-    setCartItems((prev) => {
-      const existing = prev.find((i) => i.id === item.id)
-      if (existing) {
-        return prev.map((i) => (i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i))
-      }
-      return [...prev, { ...item, quantity: 1 }]
-    })
-  }
-
-  const updateQuantity = (id: string, quantity: number) => {
-    if (quantity <= 0) {
-      setCartItems((prev) => prev.filter((item) => item.id !== id))
-    } else {
-      setCartItems((prev) => prev.map((item) => (item.id === id ? { ...item, quantity } : item)))
-    }
-  }
-
-  const getTotalItems = () => {
-    return cartItems.reduce((sum, item) => sum + item.quantity, 0)
-  }
-
-  const createOrder = (customerName?: string) => {
+  const handlePlaceOrder = (orderData: any) => {
     const newOrder: Order = {
-      id: `order-${Math.random().toString(36).substr(2, 9)}`,
-      items: [...cartItems],
-      total: cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
+      id: Date.now().toString(),
+      items: orderData.items,
+      total: orderData.total,
+      orderType: orderData.orderType,
+      tableNumber: orderData.tableNumber,
+      address: orderData.address,
+      customerName: orderData.customerName,
+      phone: orderData.phone,
       status: "pending",
-      tableNumber: orderType === "dine-in" ? tableNumber : undefined,
-      customerName,
-      orderType,
-      timestamp: new Date()
+      timestamp: new Date(),
     }
-    
-    addOrder(newOrder)
-    setCartItems([])
-    clearCartFromStorage() // Clear cart from localStorage after successful order
-    return newOrder
+
+    setOrders((prev) => [...prev, newOrder])
+    setCurrentOrder(newOrder)
+    clearCart()
+    setIsCartOpen(false)
+    setCurrentView("order-success")
   }
 
-  if (currentPage === "home") {
+  const handleUpdateOrderStatus = (orderId: string, status: Order["status"]) => {
+    setOrders((prev) => prev.map((order) => (order.id === orderId ? { ...order, status } : order)))
+  }
+
+  const handleBackToHome = () => {
+    setCurrentView("menu")
+    setCurrentOrder(null)
+  }
+
+  if (currentView === "admin") {
     return (
-      <>
-        <HomePage
-          onNavigate={navigateToPage}
-          onAddToCart={addToCart}
-          onShowCart={() => setShowCartModal(true)}
-          cartItemCount={getTotalItems()}
-          orderType={orderType}
-          tableNumber={tableNumber}
-          onOrderTypeChange={setOrderType}
-        />
-        {showCartModal && (
-          <CartModal
-            items={cartItems}
-            onClose={() => setShowCartModal(false)}
-            onUpdateQuantity={updateQuantity}
-            onConfirm={() => {
-              setShowCartModal(false)
-              navigateToPage("order-list")
-            }}
-          />
-        )}
-      </>
+      <div>
+        <AdminPanel orders={orders} onUpdateOrderStatus={handleUpdateOrderStatus} />
+        <div className="fixed bottom-4 right-4">
+          <Button onClick={() => setCurrentView("menu")}>Back to Menu</Button>
+        </div>
+      </div>
     )
   }
 
-  if (currentPage === "menu") {
-    return (
-      <>
-        <MenuPage 
-          onNavigate={navigateToPage} 
-          onAddToCart={addToCart} 
-          cartItemCount={getTotalItems()} 
-          onShowCart={() => setShowCartModal(true)}
-        />
-        {showCartModal && (
-          <CartModal
-            items={cartItems}
-            onClose={() => setShowCartModal(false)}
-            onUpdateQuantity={updateQuantity}
-            onConfirm={() => {
-              setShowCartModal(false)
-              navigateToPage("order-list")
-            }}
-          />
-        )}
-      </>
-    )
+  if (currentView === "order-success" && currentOrder) {
+    return <OrderSuccess orderData={currentOrder} onBackToHome={handleBackToHome} />
   }
 
-  if (currentPage === "order-list") {
-    return (
-      <OrderListPage
-        items={cartItems}
-        onNavigate={navigateToPage}
-        onUpdateQuantity={updateQuantity}
-        onOrderNow={(customerName) => {
-          createOrder(customerName)
-          navigateToPage("order-success")
-        }}
-        orderType={orderType}
-        tableNumber={tableNumber}
-        onOrderTypeChange={setOrderType}
-      />
-    )
-  }
-
-  if (currentPage === "order-success") {
-    return (
-      <OrderSuccessPage
-        onNavigate={navigateToPage}
-        totalAmount={orders[orders.length - 1]?.total || 0}
-        orderType={orderType}
-        tableNumber={tableNumber}
-      />
-    )
-  }
-
-  if (currentPage === "qr-generator") {
-    return <QRGenerator onNavigate={navigateToPage} />
-  }
-
-  return null
-}
-
-export default function App() {
   return (
-    <OrderProvider>
-      <AppContent />
-    </OrderProvider>
+    <div className="min-h-screen bg-gray-100">
+      <div className="max-w-md mx-auto bg-white min-h-screen relative">
+        <CafeHeader cartItemCount={getTotalItems()} onCartClick={() => setIsCartOpen(true)} />
+
+        <div className="p-4">
+          {/* Promotional Banner */}
+          <div className="bg-gradient-to-r from-yellow-400 to-red-500 rounded-2xl p-4 mb-6 text-white relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold mb-1">20%</h2>
+                <h2 className="text-2xl font-bold mb-2">OFF</h2>
+                <Button size="sm" className="bg-white/20 hover:bg-white/30 text-white">
+                  Shop now ▶
+                </Button>
+              </div>
+              <div className="text-right">
+                <div className="w-20 h-20 bg-white/20 rounded-full mb-2"></div>
+                <p className="font-bold">Al Faham Mandi</p>
+              </div>
+            </div>
+          </div>
+
+          <CategoryTabs activeCategory={activeCategory} onCategoryChange={setActiveCategory} />
+
+          <h2 className="text-xl font-bold text-white mb-4">Popular</h2>
+
+          <div className="grid grid-cols-2 gap-4 mb-20">
+            {filteredItems.map((item) => (
+              <MenuItemCard key={item.id} item={item} onAddToCart={handleAddToCart} />
+            ))}
+          </div>
+        </div>
+
+        {/* Cart notification */}
+        {getTotalItems() > 0 && !isCartOpen && (
+          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-40">
+            <div className="bg-white rounded-full px-4 py-2 shadow-lg flex items-center gap-2">
+              <span className="text-sm font-medium">{getTotalItems()} Item added</span>
+              <Button
+                size="sm"
+                onClick={() => setIsCartOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full"
+              >
+                View Cart ▶
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <CartDrawer
+          isOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          cart={cart}
+          onUpdateQuantity={updateQuantity}
+          onRemoveItem={removeFromCart}
+          totalPrice={getTotalPrice()}
+          onPlaceOrder={handlePlaceOrder}
+        />
+
+        {/* Admin Panel Access */}
+        <div className="fixed top-4 left-4">
+          <Button size="sm" variant="outline" onClick={() => setCurrentView("admin")} className="bg-white/90">
+            Admin
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
